@@ -6,7 +6,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { Icourse163Client, defaultAuthFile } from './client.mjs';
 import { loginStart, loginState, loginCancel } from './login.mjs';
-import { draftReply, sleep, gauss } from './human.mjs';
+import { sleep, gauss } from './human.mjs';
 
 const client = new Icourse163Client();
 
@@ -198,18 +198,17 @@ server.registerTool(
   {
     title: 'MK 批量完成课程',
     description:
-      '批量完成任务点:视频(ct1)一次上报;文档(ct3)自动下载 PDF 字节再上报;富文本(ct4)打开即完成;讨论(ct6)回帖(text 可自动生成);测验(ct5)默认只写学习记录,autoQuiz=true 走拟真逐题作答(含故意错题)。注意:批量时的调用节奏(讨论间隔 ~30s 波动、半天内摊完)由 agent 自行 sleep 控制;本工具单次调用内部只保证单请求级真实感。内置 ≥13s 写节流与限流重试。',
+      '批量完成任务点:视频(ct1)一次上报;文档(ct3)自动下载 PDF 字节再上报;富文本(ct4)打开即完成;测验(ct5)默认只写学习记录,autoQuiz=true 走拟真逐题作答(含故意错题);讨论(ct6)不代发——返回讨论清单,由你逐条用 mk_discuss_reply 撰写并回帖(每条间隔 ~30s 波动)。内置 ≥13s 写节流与限流重试。',
     inputSchema: {
       termId: z.union([z.string(), z.number()]),
       types: z.string().default('1,3,4,6').describe('逗号分隔 contentType 列表(1视频 3文档 4富文本 5测验 6讨论)'),
       onlyUnfinished: z.boolean().default(true),
       includeUnpublished: z.boolean().default(false),
-      autoReply: z.boolean().default(false).describe('ct=6: 自动发一条通用回复以完成任务点'),
-      autoQuiz: z.boolean().default(false).describe('ct=5: 自动满分交卷'),
+      autoQuiz: z.boolean().default(false).describe('ct=5: 自动拟真交卷(逐题节奏+故意错题)'),
       dryRun: z.boolean().default(false),
     },
   },
-  async ({ termId, types, onlyUnfinished, includeUnpublished, autoReply, autoQuiz, dryRun }) => {
+  async ({ termId, types, onlyUnfinished, includeUnpublished, autoQuiz, dryRun }) => {
     const tree = await client.getLastLearnedTerm(termId);
     const courseId = tree.courseId;
     const wanted = new Set(
@@ -221,9 +220,18 @@ server.registerTool(
     let units = client.flattenUnits(tree).filter((u) => wanted.has(u.contentType));
     if (!includeUnpublished) units = units.filter((u) => u.chapterPublished);
     if (onlyUnfinished) units = units.filter((u) => (u.completePercent ?? 0) < 1);
-    if (dryRun) return text({ plan: units.length, units: units.map((u) => ({ unitId: u.unitId, ct: u.contentType, name: u.name })) });
+    // discussions are NOT auto-posted: the agent authors each reply via mk_discuss_reply
+    const discussUnits = units.filter((u) => u.contentType === 6);
+    const execUnits = units.filter((u) => u.contentType !== 6);
 
-    const results = await mapWithRetry(units, async (u) => {
+    if (dryRun)
+      return text({
+        plan: execUnits.length,
+        discussions: discussUnits.map((u) => ({ unitId: u.unitId, postId: u.contentId, name: u.name })),
+        units: execUnits.map((u) => ({ unitId: u.unitId, ct: u.contentType, name: u.name })),
+      });
+
+    const results = await mapWithRetry(execUnits, async (u) => {
       let r;
       if (u.contentType === 1) {
         r = await client.completeVideo({
@@ -237,12 +245,6 @@ server.registerTool(
       } else if (u.contentType === 3) {
         const doc = u.contentId ? await client.fetchDocPdf(u.contentId, u.unitId) : {};
         r = await client.completeDoc({ unitId: u.unitId, courseId, lessonId: u.lessonId, termId, pageNum: doc.textPages });
-      } else if (u.contentType === 6) {
-        if (!autoReply) throw new Error('讨论单元必须回帖才完成:传 autoReply=true');
-        r = await client.discussReply(
-          u.contentId,
-          '学习本节内容后收获很大，结合所学对讨论话题进行了思考：关键是发现真实需求、打破思维定式并持续迭代验证。',
-        );
       } else if (u.contentType === 5) {
         if (!autoQuiz) {
           r = await client.completeLearnInfo({ unitId: u.unitId, contentType: 5 });
@@ -256,9 +258,13 @@ server.registerTool(
     });
     return text({
       courseId,
-      total: units.length,
+      total: execUnits.length,
       ok: results.filter((x) => x.result).length,
       failed: results.filter((x) => x.error),
+      discussions: discussUnits.map((u) => ({ unitId: u.unitId, postId: u.contentId, name: u.name })),
+      hint: discussUnits.length
+        ? '讨论需逐条用 mk_discuss_reply 回帖(text 由你根据话题撰写),每条间隔 ~30s 波动'
+        : undefined,
     });
   },
 );
@@ -301,19 +307,17 @@ server.registerTool(
   {
     title: 'MK 讨论回帖',
     description:
-      '在讨论单元发一条回复(MocForumBean.addReply, DWR)。讨论只有真实回帖才会置为完成。时间戳节奏由调用方控制:批量发帖时请在两次调用之间自行 sleep(建议 30s±10s 高斯波动,半天内摊完即可);也可传 pauseBeforeMs 让本调用内部先等待。text 不传时按 unitName 自动生成一条通用回复。',
+      '在讨论单元发一条回复(MocForumBean.addReply, DWR)。讨论只有真实回帖才会置为完成。text 必须由你(agent)根据讨论话题撰写与主题相关的内容,不要用模板或占位文字。时间戳节奏由调用方控制:批量发帖时请在两次调用之间自行 sleep(建议 30s±10s 高斯波动,半天内摊完即可);也可传 pauseBeforeMs 让本调用内部先等待。',
     inputSchema: {
       postId: z.union([z.string(), z.number()]).describe('讨论单元的 contentId(即帖子 id)'),
-      text: z.string().max(2000).optional().describe('回复文本;不传则自动生成'),
-      unitName: z.string().optional().describe('讨论单元标题,用于自动生成回复'),
+      text: z.string().min(1).max(2000).describe('回复文本,由你根据讨论话题撰写'),
       anonymous: z.number().int().min(0).max(1).default(0),
       pauseBeforeMs: z.number().int().min(0).max(120000).default(0).describe('发送前内部等待毫秒数(0=不等,由 agent 控制节奏)'),
     },
   },
-  async ({ postId, text: reply, unitName, anonymous, pauseBeforeMs }) => {
+  async ({ postId, text: reply, anonymous, pauseBeforeMs }) => {
     if (pauseBeforeMs > 0) await sleep(Math.round(gauss(pauseBeforeMs, pauseBeforeMs * 0.3, pauseBeforeMs * 0.4, pauseBeforeMs * 1.6)));
-    const body = reply || draftReply(unitName || '');
-    return text(await client.discussReply(postId, body, anonymous));
+    return text(await client.discussReply(postId, reply, anonymous));
   },
 );
 

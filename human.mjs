@@ -1,14 +1,12 @@
-// Realism helpers for the icourse163 MCP.
-// Philosophy: pacing BETWEEN tool calls is the calling agent's job (it can sleep);
-// this module only adds realism INSIDE one call:
+// Realism helpers for the mk MCP.
+// Philosophy: content and pacing BETWEEN tool calls are the calling agent's job
+// (it writes the discussion replies, it sleeps between calls); this module only
+// adds realism INSIDE one call:
 //   - quiz: q-by-q answer delays (5-6s base, longer for long questions, shorter for
 //     short ones) + deliberate wrong answers ("适当错个几道")
-//   - docs: full PDF byte download before reporting completion
-//   - discussions: text pool (quality irrelevant; timestamps are the agent's concern)
+//   - docs: full PDF byte download before reporting completion (see client)
 export const rnd = (a, b) => a + Math.random() * (b - a);
-export const ri = (a, b) => Math.floor(rnd(a, b + 1));
 export const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-export const chance = (p) => Math.random() < p;
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
@@ -62,23 +60,3 @@ export function buildQuizSession(paper, { sessionSeconds = 45, wrongCount = 'aut
   const scale = Math.min(1, (sessionSeconds * 1000) / Math.max(1, totalBase));
   return { qs, delays: delays.map((d) => d * scale), reviewMs: reviewMs * scale, sacrificeIdx };
 }
-
-// Discussion text pool (content quality explicitly not a goal; agent controls timing).
-const topic = (name) =>
-  String(name || '该话题')
-    .replace(/(讨论题?|[?？!！。])/g, '')
-    .trim()
-    .slice(0, 24) || '该话题';
-
-const REPLY_TEMPLATES = [
-  (t) => `学习「${t}」这一节后收获很大。我的理解是，遇到这类问题可以先发散列出尽量多的可能性，再用可行性和价值两个维度做收敛筛选。`,
-  (t) => `关于${t}，结合自己的经历谈一点体会：很多看似常规的问题换个角度拆解，往往就能找到改进空间，关键是先把想法落下来再逐步验证。`,
-  (t) =>
-    `我的看法是${t}没有唯一标准答案，重要的是从不同视角审视。${
-      chance(0.5) ? '课程里提到的方法给了我不少启发，准备在接下来的学习里实际试一试。' : '欢迎大家补充不同的思路。'
-    }`,
-  (t) => `本节关于${t}的内容让我意识到，很多结论并非凭空而来，往往来自对日常细节的重新审视和资源的重新组合。`,
-  (t) => `${t}这个话题很有意思。我认为实践比空谈更重要，先小范围试错、快速拿到反馈，再决定是否放大投入。`,
-];
-
-export const draftReply = (unitName) => pick(REPLY_TEMPLATES)(topic(unitName));
