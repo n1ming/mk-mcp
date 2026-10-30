@@ -191,10 +191,14 @@ export class Icourse163Client {
     });
   }
 
-  // Signed JSON RPC (writes). Throttled to minIntervalMs.
+  // Signed JSON RPC (writes). Throttled to minIntervalMs. Body = {"dto": ...}
   async rpcSigned(dto, rpcMethod = 'courseRpcBean.saveMocContentLearn') {
+    return this.rpcSignedRaw(JSON.stringify({ dto }), rpcMethod);
+  }
+
+  // Signed post with a pre-built body string (e.g. submitAnswers' {"paperDto":...}).
+  async rpcSignedRaw(bodyStr, rpcMethod) {
     await this._throttle();
-    const bodyStr = JSON.stringify({ dto });
     const nonce = String(1000 + Math.floor(Math.random() * 9000));
     const ts = String(Date.now());
     const sig = crypto
@@ -448,20 +452,29 @@ export class Icourse163Client {
   //   open (learn-info) -> q-by-q delays (5-6s base, length-scaled) with REAL
   //   timestamps -> a few deliberately wrong answers -> review gap -> submit.
   // wrongCount: 'auto' (~25%, 1..3) or an explicit number.
-  async submitQuiz({ contentId, unitId, sessionSeconds = 45, wrongCount = 'auto' }) {
+  // fillAnswers: { [qid]: text } for type-3 fill-in-blank questions — they are
+  // submitted as content:{content:text} (no optIds; the server rejects optIds
+  // answers for them with code:-1).
+  async submitQuiz({ contentId, unitId, sessionSeconds = 45, wrongCount = 'auto', fillAnswers } = {}) {
     const { data } = await this.dwrGetLessonUnitLearnVo(contentId, 5, unitId);
     const paper = data?.paper;
     if (!paper || !paper.objectiveQList?.length) throw new Error('未取到试卷 objectiveQList');
     const sess = buildQuizSession(paper, { sessionSeconds, wrongCount });
     const startedAt = Date.now();
     await this.rpcSigned({ unitId, finished: true, contentType: 5 }); // "opening" the quiz
+    const fa = fillAnswers || {};
     const answers = [];
     const sacrificed = [];
     for (let i = 0; i < sess.qs.length; i++) {
       await sleep(sess.delays[i]);
       const q = sess.qs[i];
+      if (q.type === 3) {
+        // fill-in-blank: text answer, no optIds
+        answers.push({ qid: q.id, type: q.type, content: { content: String(fa[q.id] ?? '') } });
+        continue;
+      }
       let optIds = (q.optionDtos || []).filter((o) => o.answer === true).map((o) => o.id);
-      if (!optIds.length) optIds = [(q.optionDtos || [])[0]?.id];
+      if (!optIds.length) optIds = (q.optionDtos || []).map((o) => o.id).slice(0, 1);
       if (sess.sacrificeIdx.has(i)) {
         optIds = sacrificedOptIds(q);
         sacrificed.push(q.id);
@@ -469,14 +482,16 @@ export class Icourse163Client {
       answers.push({ qid: q.id, type: q.type, optIds, time: Date.now() });
     }
     await sleep(sess.reviewMs);
-    const r = await this.rpcSigned(
-      {
-        paperDto: { aid: paper.aid, submitStatus: 1, tid: paper.tid || contentId, type: paper.type, answers },
-        preview: false,
-      },
+    // the site submits the FULL paper dto (serialized) with answers attached;
+    // NOTE: top-level {"paperDto":..., "preview":false} — NOT wrapped in {"dto":...}
+    const dto = JSON.parse(JSON.stringify(paper));
+    dto.submitStatus = 1;
+    dto.answers = answers;
+    const r = await this.rpcSignedRaw(
+      JSON.stringify({ paperDto: dto, preview: false }),
       'mocQuizRpcBean.submitAnswers',
     );
-    if (r.json?.code !== 0) throw new Error(`交卷失败: ${r.status} ${r.text.slice(0, 200)}`);
+    if (r.json?.code !== 0 || r.json?.result === -1) throw new Error(`交卷失败: ${r.status} ${r.text.slice(0, 200)}`);
     return {
       aid: paper.aid,
       tid: paper.tid,

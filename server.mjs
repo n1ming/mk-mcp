@@ -296,10 +296,14 @@ server.registerTool(
         .union([z.string(), z.number()])
         .default('auto')
         .describe("故意做错的题数;'auto'=按 25%(1-3 题),或传数字(0=全对)"),
+      fillAnswers: z
+        .record(z.string(), z.string())
+        .optional()
+        .describe('填空题(type=3)的作答文本,键为 qid(可先 mk_get_quiz 看题);不传则留空提交'),
     },
   },
-  async ({ contentId, unitId, sessionSeconds, wrongCount }) =>
-    text(await client.submitQuiz({ contentId, unitId, sessionSeconds, wrongCount })),
+  async ({ contentId, unitId, sessionSeconds, wrongCount, fillAnswers }) =>
+    text(await client.submitQuiz({ contentId, unitId, sessionSeconds, wrongCount, fillAnswers })),
 );
 
 server.registerTool(
