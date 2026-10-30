@@ -107,6 +107,74 @@ server.registerTool(
 );
 
 server.registerTool(
+  'mk_watch_video',
+  {
+    title: 'MK 视频真实播放(无头)',
+    description:
+      '无头浏览器里用站点原生播放器 1 倍速静音真实播放指定视频:学习时长/心跳/完成上报全部由播放器原生产生,中途弹出的视频驻点题自动按正确答案作答(fetchQuestions 接口泄漏 answer 标志)。本调用立即返回,播放跨调用持续;用 mk_watch_status 轮询进度至 state=ended。slug 一般不用传(mk_list_courses 会缓存)。',
+    inputSchema: {
+      termId: z.union([z.string(), z.number()]),
+      unitId: z.union([z.string(), z.number()]).describe('视频任务点 unitId(其余参数自动从学习树解析)'),
+      speed: z.number().min(0.5).max(16).default(1).describe('播放倍速,默认 1(原速)'),
+    },
+  },
+  async ({ termId, unitId, speed }) =>
+    text(await client.watchVideo({ termId, unitId, speed })),
+);
+
+server.registerTool(
+  'mk_watch_status',
+  {
+    title: 'MK 视频播放进度',
+    description: '查询 mk_watch_video 的后台播放状态: playing/paused/ended/novideo + 当前时间/总时长/已自动作答驻点题数。state=ended 即学习完成。',
+    inputSchema: {},
+  },
+  async () => text(client.watchStatus()),
+);
+
+server.registerTool(
+  'mk_pad_watch_time',
+  {
+    title: 'MK 补视频学习时长',
+    description:
+      '把指定视频的学习时长(learnTime,分钟)补到目标值:按真实客户端形状逐条上报 LEARN_TIME_COUNT 心跳(每条 60 秒,13s 节流,自动重试限流)。targetMinutes 不传时默认补到视频时长对应的分钟数。仅视频(ct=1)有效。',
+    inputSchema: {
+      termId: z.union([z.string(), z.number()]),
+      courseId: z.union([z.string(), z.number()]),
+      lessonId: z.union([z.string(), z.number()]),
+      unitId: z.union([z.string(), z.number()]).describe('视频任务点 unitId'),
+      videoId: z.union([z.string(), z.number()]).describe('视频内容 contentId'),
+      targetMinutes: z.number().int().min(1).max(600).optional().describe('目标学习时长(分钟);不传=补到视频时长'),
+      gapSeconds: z.number().min(8).max(60).default(13).describe('两条心跳间隔秒数'),
+    },
+  },
+  async ({ termId, courseId, lessonId, unitId, videoId, targetMinutes, gapSeconds }) => {
+    const tree = await client.getLastLearnedTerm(termId);
+    const unit = client.flattenUnits(tree).find((u) => u.unitId === Number(unitId));
+    if (!unit || unit.contentType !== 1) throw new Error('找不到该视频任务点');
+    const current = Math.ceil((unit.learnTime || 0));
+    const target = targetMinutes ?? Math.ceil((unit.durationInSeconds || 0) / 60);
+    const needed = Math.max(0, target - current);
+    if (!needed) return text({ ok: true, unitId, learnTimeBefore: current, target, sent: 0 });
+    const pad = await client.padWatchTime({
+      unitId: Number(unitId),
+      courseId: Number(tree.courseId),
+      lessonId: unit.lessonId,
+      videoId: unit.contentId,
+      termId,
+      reports: needed,
+      startIndex: (unit.learnTime || 0) + 2,
+      videoTime: unit.durationInSeconds || 60,
+      reportSeconds: 60,
+      gapMs: gapSeconds * 1000,
+    });
+    const tree2 = await client.getLastLearnedTerm(termId);
+    const after = client.flattenUnits(tree2).find((u) => u.unitId === Number(unitId));
+    return text({ ok: true, unitId, learnTimeBefore: current, sent: needed, learnTimeAfter: after.learnTime, codes: pad.codes });
+  },
+);
+
+server.registerTool(
   'mk_get_course',
   {
     title: 'MK 课程结构',
