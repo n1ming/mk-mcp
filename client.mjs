@@ -635,27 +635,6 @@ export class Icourse163Client {
     return this._memberId;
   }
 
-  // contentType=1 video. videoId == unit.contentId; server clamps percent to max(videoTime)/duration.
-  async completeVideo({ unitId, courseId, lessonId, videoId, termId, durationSeconds, videoTime, userId }) {
-    const uid = userId || this._memberId || (await this.resolveMemberId());
-    if (!uid) throw new Error('缺少 userId(无法从会话解析 memberId,请显式传入)');
-    return this.rpcSigned({
-      unitId,
-      finished: true,
-      index: 1,
-      duration: 60000,
-      courseId,
-      lessonId,
-      videoId,
-      termId,
-      userId: String(uid),
-      contentType: 1,
-      action: 'LEARN_TIME_COUNT',
-      videoTime: Math.max(Number(videoTime) || 0, (Number(durationSeconds) || 0) + 50),
-      learnedVideoTimeCount: 60,
-    });
-  }
-
   // contentType=3 doc. pageNum = total pages from dwrGetLessonUnitLearnVo(contentId,3,unitId).textPages
   async completeDoc({ unitId, courseId, lessonId, termId, pageNum }) {
     return this.rpcSigned({

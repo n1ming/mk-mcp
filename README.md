@@ -67,7 +67,7 @@ npm install
         ⑧ mk_verify           全部 cp=1 收工
 ```
 
-任务点类型：`1`=视频 `3`=文档 `4`=富文本 `5`=测验 `6`=讨论。
+任务点类型：`1`=视频 `3`=文档 `4`=富文本 `5`=测验 `6`=讨论。视频(ct=1)**只能 1 倍速真实观看完成**(mk_watch_video),所有上报类工具均不支持秒刷视频。
 
 ## 🔑 登录
 
@@ -93,8 +93,8 @@ npm install
 | `mk_check_login` | 验证本地会话；给 `termId` 时实测鉴权接口 |
 | `mk_get_course` | 课程结构：章/节/任务点 + 类型统计 + 发布状态 |
 | `mk_list_units` | 任务点清单（按类型/完成度/发布状态过滤） |
-| `mk_complete_unit` | 完成单个任务点（文档会先下载 PDF 原件再上报） |
-| `mk_complete_course` | 批量完成任务点（默认 3,4,5,6——视频不在内,走 mk_watch_video 真实播放;讨论不代发返回清单;`dryRun` 只列计划） |
+| `mk_complete_unit` | 完成单个任务点（文档先下载 PDF 原件再上报；**视频 ct=1 不支持**,请用 mk_watch_video） |
+| `mk_complete_course` | 批量完成任务点（默认 3,4,5,6;**视频 ct=1 不可用**,只能 mk_watch_video;讨论不代发返回清单;`dryRun` 只列计划） |
 | `mk_get_quiz` | 拉取试卷结构：题干 / 选项 / 题型 |
 | `mk_submit_quiz` | 拟真作答交卷：逐题真实时间戳（基准 5-6s，长题延长/短题缩短），`wrongCount` 控制故意错几道（默认约 25%），`sessionSeconds` 控制整场压缩比 |
 | `mk_discuss_reply` | 讨论回帖（**`text` 由 agent 根据讨论话题撰写**；`pauseBeforeMs` 可选内部等待；**批量节奏由 agent 在调用间自行 sleep，建议每条 30s±10s**） |
@@ -109,6 +109,7 @@ npm install
 - 讨论逐条调用，间隔 30s±10s 随机波动；
 - 测验逐卷调用，卷与卷之间隔几十分钟；
 - `mk_complete_course` 单次调用内部自带写请求节流与限流重试，调用之间的节奏由 agent 掌控。
+- **无视频秒刷路径**：视频完成只有 mk_watch_video 真实观看这一条路，本机无头、1 倍速、从头播放。
 
 ## 📄 License
 

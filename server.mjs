@@ -228,25 +228,23 @@ server.registerTool(
   {
     title: 'MK 完成单个任务点',
     description:
-      '上报一个任务点的学习完成。视频(ct=1)一次上报 videoTime=时长+50 即 100%;文档(ct=3)需 textPages(可传 contentId 自动取);富文本/讨论(ct=4/6)打开即完成。',
+      '上报一个任务点的学习完成。文档(ct=3)会先下载 PDF 原件再上报(可传 contentId 自动取总页数);富文本/讨论(ct=4/6)打开即完成。视频(ct=1)不支持本工具——只能用 mk_watch_video 1 倍速真实观看完成,无秒刷路径。',
     inputSchema: {
       termId: z.union([z.string(), z.number()]),
       courseId: z.union([z.string(), z.number()]),
       lessonId: z.union([z.string(), z.number()]),
       unitId: z.union([z.string(), z.number()]),
-      contentType: z.number().int().describe('1视频 3文档 4富文本 5测验 6讨论'),
-      contentId: z.union([z.string(), z.number()]).optional().describe('ct=1 时为 videoId;ct=3 时用于自动取总页数'),
-      durationSeconds: z.number().optional().describe('ct=1 视频时长(秒)'),
+      contentType: z.number().int().describe('3文档 4富文本 5测验 6讨论(视频 ct=1 不支持,请用 mk_watch_video)'),
+      contentId: z.union([z.string(), z.number()]).optional().describe('ct=3 时用于自动取总页数'),
       textPages: z.number().int().optional().describe('ct=3 文档总页数;不传且给了 contentId 时自动获取'),
     },
   },
   async (args) => {
-    const { termId, courseId, lessonId, unitId, contentType, contentId, durationSeconds, textPages } = args;
+    const { termId, courseId, lessonId, unitId, contentType, contentId, textPages } = args;
+    if (contentType === 1) throw new Error('视频任务点不支持秒刷:只能用 mk_watch_video 1 倍速真实观看完成');
     let r;
     let pdf = null;
-    if (contentType === 1) {
-      r = await client.completeVideo({ unitId, courseId, lessonId, videoId: contentId, termId, durationSeconds });
-    } else if (contentType === 3) {
+    if (contentType === 3) {
       // download the full PDF bytes first so the CDN log matches "opened the doc"
       const doc = contentId ? await client.fetchDocPdf(contentId, unitId) : { textPages, pdf: null };
       pdf = doc.pdf;
@@ -266,10 +264,10 @@ server.registerTool(
   {
     title: 'MK 批量完成课程',
     description:
-      '批量完成任务点:文档(ct3)自动下载 PDF 字节再上报;富文本(ct4)打开即完成;测验(ct5)默认只写学习记录,autoQuiz=true 走拟真逐题作答(含故意错题);讨论(ct6)不代发——返回讨论清单,由你逐条用 mk_discuss_reply 撰写并回帖(每条间隔 ~30s 波动)。视频(ct1)不在默认批量里——用 mk_watch_video 1 倍速真实播放(从头、驻点题自动答),仅当你显式把 1 写进 types 时才走一次上报秒刷。内置 ≥13s 写节流与限流重试。',
+      '批量完成任务点:文档(ct3)自动下载 PDF 字节再上报;富文本(ct4)打开即完成;测验(ct5)默认只写学习记录,autoQuiz=true 走拟真逐题作答(含故意错题);讨论(ct6)不代发——返回讨论清单,由你逐条用 mk_discuss_reply 撰写并回帖(每条间隔 ~30s 波动)。视频(ct1)只能用 mk_watch_video 1 倍速真实播放(从头、驻点题自动答),types 里传 1 会被拒绝(无秒刷路径)。内置 ≥13s 写节流与限流重试。',
     inputSchema: {
       termId: z.union([z.string(), z.number()]),
-      types: z.string().default('3,4,5,6').describe('逗号分隔 contentType 列表(1视频 3文档 4富文本 5测验 6讨论);视频默认走 mk_watch_video 真实播放,显式传 1 才秒刷'),
+      types: z.string().default('3,4,5,6').describe('逗号分隔 contentType 列表(3文档 4富文本 5测验 6讨论);视频 ct=1 不支持,请用 mk_watch_video'),
       onlyUnfinished: z.boolean().default(true),
       includeUnpublished: z.boolean().default(false),
       autoQuiz: z.boolean().default(false).describe('ct=5: 自动拟真交卷(逐题节奏+故意错题)'),
@@ -285,6 +283,7 @@ server.registerTool(
         .map((s) => Number(s.trim()))
         .filter(Boolean),
     );
+    if (wanted.has(1)) throw new Error('视频(ct=1)不支持秒刷:请用 mk_watch_video 1 倍速真实观看完成');
     let units = client.flattenUnits(tree).filter((u) => wanted.has(u.contentType));
     if (!includeUnpublished) units = units.filter((u) => u.chapterPublished);
     if (onlyUnfinished) units = units.filter((u) => (u.completePercent ?? 0) < 1);
@@ -301,16 +300,7 @@ server.registerTool(
 
     const results = await mapWithRetry(execUnits, async (u) => {
       let r;
-      if (u.contentType === 1) {
-        r = await client.completeVideo({
-          unitId: u.unitId,
-          courseId,
-          lessonId: u.lessonId,
-          videoId: u.contentId,
-          termId,
-          durationSeconds: u.durationInSeconds,
-        });
-      } else if (u.contentType === 3) {
+      if (u.contentType === 3) {
         const doc = u.contentId ? await client.fetchDocPdf(u.contentId, u.unitId) : {};
         r = await client.completeDoc({ unitId: u.unitId, courseId, lessonId: u.lessonId, termId, pageNum: doc.textPages });
       } else if (u.contentType === 5) {
