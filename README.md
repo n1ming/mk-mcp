@@ -59,10 +59,12 @@ npm install
         ① mk_login_start + mk_login_status   首次使用先登录（弹窗手动登录一次，status 轮询到 success）
         ② mk_list_courses     列出最近课程拿 termId（知道 tid 也可直接给）
         ③ mk_get_course       看课程结构，拿 courseId / 章节任务点
-        ④ mk_complete_course  批量完成任务点（视频/文档/富文本/讨论）
-        ⑤ mk_submit_quiz      逐卷作答交卷（卷与卷之间隔几十分钟）
-        ⑥ mk_discuss_reply    讨论回帖（内容自己写，每条间隔 ~30s 波动，半天内摊完）
-        ⑦ mk_verify           全部 cp=1 收工
+        ④ mk_watch_video      视频逐个真实播放（1 倍速从头、驻点题自动答，
+           mk_watch_status 轮询到 ended；学习时长不够用 mk_pad_watch_time 补）
+        ⑤ mk_complete_course  批量完成其余（文档/富文本/测验/讨论）
+        ⑥ mk_submit_quiz      逐卷作答交卷（卷与卷之间隔几十分钟）
+        ⑦ mk_discuss_reply    讨论回帖（内容自己写，每条间隔 ~30s 波动，半天内摊完）
+        ⑧ mk_verify           全部 cp=1 收工
 ```
 
 任务点类型：`1`=视频 `3`=文档 `4`=富文本 `5`=测验 `6`=讨论。
@@ -92,10 +94,13 @@ npm install
 | `mk_get_course` | 课程结构：章/节/任务点 + 类型统计 + 发布状态 |
 | `mk_list_units` | 任务点清单（按类型/完成度/发布状态过滤） |
 | `mk_complete_unit` | 完成单个任务点（文档会先下载 PDF 原件再上报） |
-| `mk_complete_course` | 批量完成任务点（`types` 选类型；讨论不代发，返回清单由 agent 逐条回帖；`dryRun` 只列计划） |
+| `mk_complete_course` | 批量完成任务点（默认 3,4,5,6——视频不在内,走 mk_watch_video 真实播放;讨论不代发返回清单;`dryRun` 只列计划） |
 | `mk_get_quiz` | 拉取试卷结构：题干 / 选项 / 题型 |
 | `mk_submit_quiz` | 拟真作答交卷：逐题真实时间戳（基准 5-6s，长题延长/短题缩短），`wrongCount` 控制故意错几道（默认约 25%），`sessionSeconds` 控制整场压缩比 |
 | `mk_discuss_reply` | 讨论回帖（**`text` 由 agent 根据讨论话题撰写**；`pauseBeforeMs` 可选内部等待；**批量节奏由 agent 在调用间自行 sleep，建议每条 30s±10s**） |
+| `mk_watch_video` | 无头真实播放指定视频：**1 倍速、从头、静音**，心跳/学习时长/完成上报由站点播放器原生产生，驻点题自动按正确答案作答；立即返回，`mk_watch_status` 轮询到 ended |
+| `mk_watch_status` | 查询后台播放进度（当前时间/总时长/驻点题已答数） |
+| `mk_pad_watch_time` | 视频学习时长(learnTime,分钟)不够时，按真实客户端形状逐条心跳补到目标值 |
 | `mk_verify` | 全量核验每个任务点完成度，未达标的单独列出 |
 
 ## 📝 节奏建议

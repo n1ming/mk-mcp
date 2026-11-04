@@ -266,10 +266,10 @@ server.registerTool(
   {
     title: 'MK 批量完成课程',
     description:
-      '批量完成任务点:视频(ct1)一次上报;文档(ct3)自动下载 PDF 字节再上报;富文本(ct4)打开即完成;测验(ct5)默认只写学习记录,autoQuiz=true 走拟真逐题作答(含故意错题);讨论(ct6)不代发——返回讨论清单,由你逐条用 mk_discuss_reply 撰写并回帖(每条间隔 ~30s 波动)。内置 ≥13s 写节流与限流重试。',
+      '批量完成任务点:文档(ct3)自动下载 PDF 字节再上报;富文本(ct4)打开即完成;测验(ct5)默认只写学习记录,autoQuiz=true 走拟真逐题作答(含故意错题);讨论(ct6)不代发——返回讨论清单,由你逐条用 mk_discuss_reply 撰写并回帖(每条间隔 ~30s 波动)。视频(ct1)不在默认批量里——用 mk_watch_video 1 倍速真实播放(从头、驻点题自动答),仅当你显式把 1 写进 types 时才走一次上报秒刷。内置 ≥13s 写节流与限流重试。',
     inputSchema: {
       termId: z.union([z.string(), z.number()]),
-      types: z.string().default('1,3,4,6').describe('逗号分隔 contentType 列表(1视频 3文档 4富文本 5测验 6讨论)'),
+      types: z.string().default('3,4,5,6').describe('逗号分隔 contentType 列表(1视频 3文档 4富文本 5测验 6讨论);视频默认走 mk_watch_video 真实播放,显式传 1 才秒刷'),
       onlyUnfinished: z.boolean().default(true),
       includeUnpublished: z.boolean().default(false),
       autoQuiz: z.boolean().default(false).describe('ct=5: 自动拟真交卷(逐题节奏+故意错题)'),
