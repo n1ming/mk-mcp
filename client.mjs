@@ -605,6 +605,33 @@ export class Icourse163Client {
     };
   }
 
+  // Scan the first `pages` pages of a thread's replies and pick the MOST FREQUENT
+  // reply text (classmates copy each other — the modal answer is the de-facto
+  // standard answer and the least AI-looking submission). Tie-break by votes.
+  async pickMostCommonReply(postId, pages = 3) {
+    const freq = new Map();
+    let scanned = 0;
+    let totalCount = null;
+    for (let p = 1; p <= pages; p++) {
+      const r = await this.getDiscussionReplies(postId, p);
+      totalCount = r.totalCount;
+      if (!r.replies.length) break;
+      scanned += r.replies.length;
+      for (const x of r.replies) {
+        const key = x.content.replace(/\s+/g, ' ').trim().slice(0, 200);
+        if (!key) continue;
+        const cur = freq.get(key);
+        if (cur) cur.count++;
+        else freq.set(key, { content: x.content.trim(), count: 1, votes: x.votes || 0 });
+      }
+    }
+    let best = null;
+    for (const v of freq.values()) {
+      if (!best || v.count > best.count || (v.count === best.count && (v.votes || 0) > (best.votes || 0))) best = v;
+    }
+    return { scanned, uniqueContents: freq.size, totalCount, best };
+  }
+
   // Recently-learned courses (the working set). mocCourseBaseCardVo carries
   // currentTermId = the tid every other tool needs.
   async listCourses() {

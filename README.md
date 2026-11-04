@@ -63,8 +63,8 @@ npm install
            mk_watch_status 轮询到 ended；学习时长不够用 mk_pad_watch_time 补）
         ⑤ mk_complete_course  批量完成其余（文档/富文本/测验/讨论）
         ⑥ mk_submit_quiz      逐卷作答交卷（卷与卷之间隔几十分钟）
-        ⑦ mk_get_discussion_replies → mk_discuss_reply
-           先看别人的回答:有则参考改写,没有才自己写(每条间隔 ~30s 波动,半天内摊完)
+        ⑦ mk_discuss_reply {postId}    → 自动采用该讨论区出现次数最多的回复原样提交
+           (讨论区没人回复时才会让 agent 自己写;每条间隔 ~30s 波动,半天内摊完)
         ⑧ mk_verify           全部 cp=1 收工
 ```
 
@@ -98,8 +98,8 @@ npm install
 | `mk_complete_course` | 批量完成任务点（默认 3,4,5,6;**视频 ct=1 不可用**,只能 mk_watch_video;讨论不代发返回清单;`dryRun` 只列计划） |
 | `mk_get_quiz` | 拉取试卷结构：题干 / 选项 / 题型 |
 | `mk_submit_quiz` | 拟真作答交卷：逐题真实时间戳（基准 5-6s，长题延长/短题缩短），`wrongCount` 控制故意错几道（默认约 25%），`sessionSeconds` 控制整场压缩比 |
-| `mk_get_discussion_replies` | 拉取讨论帖已有回复（作者/内容/票数，可翻页）——回帖前必调：有回复优先参考别人的回答同义改写 |
-| `mk_discuss_reply` | 讨论回帖（**`text` 由 agent 撰写：有已有回复则参考改写，没有才自写**；`pauseBeforeMs` 可选内部等待；**批量节奏由 agent 在调用间自行 sleep，建议每条 30s±10s**） |
+| `mk_get_discussion_replies` | 拉取讨论帖已有回复（作者/内容/票数，可翻页） |
+| `mk_discuss_reply` | 讨论回帖（**推荐 `text` 不传：自动扫描讨论区、采用出现次数最多的回复原样提交**——最高频即事实标准答案且最不像 AI；讨论区无回复时才由 agent 撰写；**批量节奏由 agent 在调用间自行 sleep，建议每条 30s±10s**） |
 | `mk_watch_video` | 无头真实播放指定视频：**1 倍速、从头、静音**，心跳/学习时长/完成上报由站点播放器原生产生，驻点题自动按正确答案作答；立即返回，`mk_watch_status` 轮询到 ended |
 | `mk_watch_status` | 查询后台播放进度（当前时间/总时长/驻点题已答数） |
 | `mk_pad_watch_time` | 视频学习时长(learnTime,分钟)不够时，按真实客户端形状逐条心跳补到目标值 |

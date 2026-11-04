@@ -383,17 +383,27 @@ server.registerTool(
   {
     title: 'MK 讨论回帖',
     description:
-      '在讨论单元发一条回复(MocForumBean.addReply, DWR)。讨论只有真实回帖才会置为完成。text 必须先经 mk_get_discussion_replies:有回复时优先参考别人的回答并同义改写(观点一致、避免逐字重复),讨论区没有回复时才自己根据话题撰写。时间戳节奏由调用方控制:批量发帖时请在两次调用之间自行 sleep(建议 30s±10s 高斯波动,半天内摊完即可);也可传 pauseBeforeMs 让本调用内部先等待。',
+      '在讨论单元发一条回复(MocForumBean.addReply, DWR)。讨论只有真实回帖才会置为完成。⚠ 推荐用法:text 不传——本工具自动扫描讨论区已有回复,挑出出现次数最多的一条原样提交(最高频回复就是事实标准答案,且最不像 AI 生成);讨论区没有任何回复时报错,此时才由你根据话题撰写 text(这是唯一需要 AI 写内容的情况)。时间戳节奏由调用方控制:批量发帖时请在两次调用之间自行 sleep(建议 30s±10s 高斯波动,半天内摊完即可)。',
     inputSchema: {
       postId: z.union([z.string(), z.number()]).describe('讨论单元的 contentId(即帖子 id)'),
-      text: z.string().min(1).max(2000).describe('回复文本,由你根据讨论话题撰写'),
+      text: z.string().max(2000).optional().describe('显式指定回复文本;不传=自动采用讨论区最高频回复(推荐)'),
+      scanPages: z.number().int().min(1).max(10).default(3).describe('自动挑选时扫描的回复页数'),
       anonymous: z.number().int().min(0).max(1).default(0),
       pauseBeforeMs: z.number().int().min(0).max(120000).default(0).describe('发送前内部等待毫秒数(0=不等,由 agent 控制节奏)'),
     },
   },
-  async ({ postId, text: reply, anonymous, pauseBeforeMs }) => {
+  async ({ postId, text: reply, scanPages, anonymous, pauseBeforeMs }) => {
     if (pauseBeforeMs > 0) await sleep(Math.round(gauss(pauseBeforeMs, pauseBeforeMs * 0.3, pauseBeforeMs * 0.4, pauseBeforeMs * 1.6)));
-    return text(await client.discussReply(postId, reply, anonymous));
+    let body = reply;
+    let picked = null;
+    if (!body) {
+      const pick = await client.pickMostCommonReply(postId, scanPages || 3);
+      if (!pick.best) throw new Error('讨论区没有任何回复:请自行撰写 text 后再调用(这是唯一需要 AI 写内容的情况)');
+      picked = { count: pick.best.count, scanned: pick.scanned, unique: pick.uniqueContents };
+      body = pick.best.content.slice(0, 2000);
+    }
+    const r = await client.discussReply(postId, body, anonymous);
+    return { ok: true, usedMostCommonReply: !!picked, picked, posted: r };
   },
 );
 
