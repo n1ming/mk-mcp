@@ -411,6 +411,9 @@ export class Icourse163Client {
   // CORRECT option (leaked via fetchQuestions optionsDetail). Playback keeps
   // running across MCP calls; poll with watchStatus().
   async watchVideo({ termId, unitId, speed = 1 }) {
+    if (this._watch && !this._watch.done && !['idle', 'stopped'].includes(this._watch.state)) {
+      throw new Error('已有视频在后台播放(严禁并行、严禁打断):只能串行,先等当前视频 state=ended(mk_watch_status 查看)后再启动下一个;其他工具调用不影响播放');
+    }
     await this.ensureTransport();
     const tid = String(termId);
     const tree = await this.getLastLearnedTerm(tid);

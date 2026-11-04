@@ -111,7 +111,7 @@ server.registerTool(
   {
     title: 'MK 视频真实播放(无头)',
     description:
-      '无头浏览器里用站点原生播放器 1 倍速静音真实播放指定视频:学习时长/心跳/完成上报全部由播放器原生产生,中途弹出的视频驻点题自动按正确答案作答(fetchQuestions 接口泄漏 answer 标志)。本调用立即返回,播放跨调用持续;用 mk_watch_status 轮询进度至 state=ended。slug 一般不用传(mk_list_courses 会缓存)。',
+      '无头浏览器里用站点原生播放器 1 倍速静音真实播放指定视频:学习时长/心跳/完成上报全部由播放器原生产生,中途弹出的视频驻点题自动按正确答案作答(fetchQuestions 接口泄漏 answer 标志)。本调用立即返回,播放跨调用持续;用 mk_watch_status 轮询进度至 state=ended。⚠ 必须串行、严禁并行:同一时间只允许播放一个视频,播放期间除 mk_watch_status 外不要调用任何其他工具(避免打断播放),等 state=ended 后再进行下一个视频或其他操作。slug 一般不用传(mk_list_courses 会缓存)。',
     inputSchema: {
       termId: z.union([z.string(), z.number()]),
       unitId: z.union([z.string(), z.number()]).describe('视频任务点 unitId(其余参数自动从学习树解析)'),
