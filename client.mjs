@@ -569,6 +569,42 @@ export class Icourse163Client {
     return { reports, codes: out };
   }
 
+  // Discussion replies list: PostBean.getPaginationReplys (DWR, no signature).
+  // params: (postId, sortType=2, pageNo 1-based). Payload: {pageNo, totalPageCount, list, totalCount}.
+  async getDiscussionReplies(postId, pageNo = 1) {
+    await this.ensureTransport();
+    const csrf = await this.liveCsrfKey();
+    const body = [
+      'callCount=1',
+      'scriptSessionId=${scriptSessionId}190',
+      `httpSessionId=${csrf}`,
+      'c0-scriptName=PostBean',
+      'c0-methodName=getPaginationReplys',
+      'c0-id=0',
+      `c0-param0=number:${postId}`,
+      'c0-param1=number:2',
+      `c0-param2=number:${pageNo}`,
+      `batchId=b${Date.now()}`,
+    ].join('\n');
+    const r = await this._post('/dwr/call/plaincall/PostBean.getPaginationReplys.dwr', {
+      body,
+      headers: { 'Content-Type': 'text/plain' },
+    });
+    const data = parseDwrReply(r.text);
+    const strip = (html) => String(html || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    return {
+      pageNo: data?.pageNo ?? pageNo,
+      totalPageCount: data?.totalPageCount ?? null,
+      totalCount: data?.totalCount ?? null,
+      replies: (data?.list || []).map((x) => ({
+        author: x.nickName || x.nickname || (x.member && (x.member.nickName || x.member.displayName)) || (x.anonymous ? '匿名' : null),
+        content: strip(x.content).slice(0, 600),
+        votes: x.countVote ?? null,
+        comments: x.countComment ?? null,
+      })),
+    };
+  }
+
   // Recently-learned courses (the working set). mocCourseBaseCardVo carries
   // currentTermId = the tid every other tool needs.
   async listCourses() {

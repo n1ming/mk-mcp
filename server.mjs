@@ -365,11 +365,25 @@ server.registerTool(
 );
 
 server.registerTool(
+  'mk_get_discussion_replies',
+  {
+    title: 'MK 获取讨论区已有回复',
+    description:
+      '拉取讨论帖的已有回复列表(postId=讨论单元的 contentId):作者/内容/票数,可翻页。回帖前必须先调本工具:有回复时,优先参考别人的回答、用自己的话同义改写作答(观点与已有回复一致,但不要逐字复制);讨论区没有任何回复时,才由你自己根据话题撰写。',
+    inputSchema: {
+      postId: z.union([z.string(), z.number()]).describe('讨论单元的 contentId(即帖子 id)'),
+      pageNo: z.number().int().min(1).default(1).describe('页码,每页约 20 条'),
+    },
+  },
+  async ({ postId, pageNo }) => text(await client.getDiscussionReplies(postId, pageNo)),
+);
+
+server.registerTool(
   'mk_discuss_reply',
   {
     title: 'MK 讨论回帖',
     description:
-      '在讨论单元发一条回复(MocForumBean.addReply, DWR)。讨论只有真实回帖才会置为完成。text 必须由你(agent)根据讨论话题撰写与主题相关的内容,不要用模板或占位文字。时间戳节奏由调用方控制:批量发帖时请在两次调用之间自行 sleep(建议 30s±10s 高斯波动,半天内摊完即可);也可传 pauseBeforeMs 让本调用内部先等待。',
+      '在讨论单元发一条回复(MocForumBean.addReply, DWR)。讨论只有真实回帖才会置为完成。text 必须先经 mk_get_discussion_replies:有回复时优先参考别人的回答并同义改写(观点一致、避免逐字重复),讨论区没有回复时才自己根据话题撰写。时间戳节奏由调用方控制:批量发帖时请在两次调用之间自行 sleep(建议 30s±10s 高斯波动,半天内摊完即可);也可传 pauseBeforeMs 让本调用内部先等待。',
     inputSchema: {
       postId: z.union([z.string(), z.number()]).describe('讨论单元的 contentId(即帖子 id)'),
       text: z.string().min(1).max(2000).describe('回复文本,由你根据讨论话题撰写'),
