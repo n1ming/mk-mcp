@@ -477,6 +477,8 @@ export class Icourse163Client {
     const amap = anchorMap;
     (async () => {
       let pausedStreak = 0;
+      let lastSeen = null; // last legitimate playback position we observed
+      const rate = Number(speed) || 1;
       while (this._watch === w && !w.done) {
         try {
           const st = await this._page.evaluate((amap) => {
@@ -506,6 +508,24 @@ export class Icourse163Client {
           }, amap);
           w.currentTime = st.currentTime ?? w.currentTime;
           w.duration = st.duration ?? w.duration;
+          // position-jump guard: if the player suddenly restores a saved position
+          // (currentTime way ahead of real 1x progress AND of our last observation),
+          // snap back to where we actually were — restarts must stay restarts.
+          if (typeof st.currentTime === 'number') {
+            const elapsed = (Date.now() - w.startedAt) / 1000;
+            if (st.currentTime > elapsed * rate + 90 && lastSeen !== null && st.currentTime > lastSeen + 90) {
+              await this._page.evaluate((t) => {
+                const v = document.querySelector('video');
+                if (v) { try { v.currentTime = t; } catch {} }
+              }, lastSeen);
+              w.jumps = (w.jumps || 0) + 1;
+              w.currentTime = lastSeen;
+              pausedStreak = 0;
+              await sleep(1500);
+              continue;
+            }
+            lastSeen = st.currentTime;
+          }
           if (st.state === 'anchor-answered') {
             w.answered++;
             w.lastAnchor = st.viaCorrect ? 'correct' : 'guess';
